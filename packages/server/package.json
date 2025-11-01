@@ -1,0 +1,55 @@
+{
+  "name": "@kev1nramos/booking-server",
+  "version": "0.1.0",
+  "description": "Google Calendar booking service with platform adapters",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./adapters/cloudflare": {
+      "types": "./dist/adapters/cloudflare.d.ts",
+      "import": "./dist/adapters/cloudflare.js"
+    },
+    "./adapters/nextjs": {
+      "types": "./dist/adapters/nextjs.d.ts",
+      "import": "./dist/adapters/nextjs.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "booking",
+    "calendar",
+    "google-calendar",
+    "cloudflare",
+    "nextjs",
+    "serverless"
+  ],
+  "author": "Kevin Ramos",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kev1nramos/booking-mechanism.git",
+    "directory": "packages/server"
+  },
+  "dependencies": {
+    "@kev1nramos/booking-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3"
+  }
+}
