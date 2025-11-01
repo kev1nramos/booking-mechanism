@@ -408,7 +408,7 @@ ${sanitizedMessage ? `- Message: ${sanitizedMessage}` : ''}
         },
         attendees: [
           { email: sanitizedEmail },
-          { email: env.MY_EMAIL },
+          { email: env.MY_EMAIL! },
         ],
       });
 

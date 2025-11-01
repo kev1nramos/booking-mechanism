@@ -95,7 +95,7 @@ export function formatTime(date: Date): string {
 export function parseDateTime(date: string, time: string): Date {
   const [year, month, day] = date.split('-').map(Number);
   const [hours, minutes] = time.split(':').map(Number);
-  return new Date(year, month - 1, day, hours, minutes);
+  return new Date(year!, (month ?? 1) - 1, day!, hours!, minutes!);
 }
 
 /**
@@ -107,7 +107,7 @@ export function parseDateTime(date: string, time: string): Date {
 export function addMinutes(time: string, minutes: number): string {
   const [hours, mins] = time.split(':').map(Number);
   const date = new Date();
-  date.setHours(hours, mins + minutes);
+  date.setHours(hours!, (mins ?? 0) + minutes);
   return formatTime(date);
 }
 

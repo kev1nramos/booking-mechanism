@@ -386,7 +386,7 @@ ${sanitizedMessage ? `- Message: ${sanitizedMessage}` : ''}
         },
         attendees: [
           { email: sanitizedEmail },
-          { email: config.env.MY_EMAIL },
+          { email: config.env.MY_EMAIL! },
         ],
       });
 
