@@ -1,0 +1,42 @@
+{
+  "name": "@kev1nramos/booking-core",
+  "version": "0.1.0",
+  "description": "Core types and utilities for Google Calendar booking system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "booking",
+    "calendar",
+    "google-calendar",
+    "types",
+    "typescript"
+  ],
+  "author": "Kevin Ramos",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kev1nramos/booking-mechanism.git",
+    "directory": "packages/core"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3"
+  }
+}
