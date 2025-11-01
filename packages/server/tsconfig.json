@@ -4,11 +4,10 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "jsx": "preserve",
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types", "node"],
+    "composite": false,
+    "incremental": false
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist"],
-  "references": [
-    { "path": "../core" }
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

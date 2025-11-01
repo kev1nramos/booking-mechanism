@@ -476,13 +476,13 @@ export class GoogleCalendarService {
       const [hours, minutes] = time.split(':').map(Number);
 
       // Validate parsed values
-      if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes)) {
+      if (isNaN(year!) || isNaN(month!) || isNaN(day!) || isNaN(hours!) || isNaN(minutes!)) {
         console.error('Invalid date/time components:', { year, month, day, hours, minutes });
         return { date, time };
       }
 
       // Create a date object representing the time in the client timezone
-      const clientDate = new Date(year, month - 1, day, hours, minutes);
+      const clientDate = new Date(year!, (month ?? 1) - 1, day!, hours!, minutes!);
 
       // Validate the created date
       if (isNaN(clientDate.getTime())) {
