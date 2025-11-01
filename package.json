@@ -1,7 +1,7 @@
 {
   "name": "@kev1nramos/booking-mechanism",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "description": "Secure, performant, platform-agnostic Google Calendar booking system with adapters for Cloudflare, Next.js, and more",
   "keywords": [
     "google-calendar",
