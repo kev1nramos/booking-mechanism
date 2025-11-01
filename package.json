@@ -1,8 +1,24 @@
 {
   "name": "@kev1nramos/booking-mechanism",
   "version": "0.1.0",
-  "private": true,
-  "description": "Reusable Google Calendar booking system for Next.js + Cloudflare Pages Functions",
+  "private": false,
+  "description": "Secure, performant, platform-agnostic Google Calendar booking system with adapters for Cloudflare, Next.js, and more",
+  "keywords": [
+    "google-calendar",
+    "booking",
+    "scheduling",
+    "calendar",
+    "cloudflare",
+    "nextjs",
+    "typescript",
+    "serverless",
+    "workers",
+    "edge-runtime"
+  ],
+  "homepage": "https://github.com/kev1nramos/booking-mechanism#readme",
+  "bugs": {
+    "url": "https://github.com/kev1nramos/booking-mechanism/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/kev1nramos/booking-mechanism.git"
