@@ -1,6 +1,6 @@
 {
   "name": "@kev1nramos/booking-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Google Calendar booking service with platform adapters",
   "type": "module",
   "main": "./dist/index.js",
