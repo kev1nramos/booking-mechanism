@@ -45,3 +45,4 @@ lerna-debug.log*
 # Misc
 .changeset/*.md
 !.changeset/README.md
+.roadmap/
