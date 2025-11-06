@@ -159,7 +159,8 @@ export class GoogleCalendarService {
    */
   private async makeCalendarRequest<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutMs: number = 10000
   ): Promise<T> {
     // Ensure we have a fresh token
     if (!this.accessToken) {
@@ -167,21 +168,15 @@ export class GoogleCalendarService {
     }
 
     const url = `${this.CALENDAR_API_BASE}${endpoint}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
 
-    // If unauthorized, refresh token and retry once
-    if (response.status === 401) {
-      await this.refreshAccessToken();
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const retryResponse = await fetch(url, {
+    try {
+      const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json',
@@ -189,20 +184,84 @@ export class GoogleCalendarService {
         },
       });
 
-      if (!retryResponse.ok) {
-        const error = await retryResponse.text();
-        throw new Error(`Calendar API error: ${retryResponse.status} - ${error}`);
+      clearTimeout(timeoutId);
+
+      // If unauthorized, refresh token and retry once
+      if (response.status === 401) {
+        await this.refreshAccessToken();
+
+        // Create new abort controller for retry
+        const retryController = new AbortController();
+        const retryTimeoutId = setTimeout(() => retryController.abort(), timeoutMs);
+
+        try {
+          const retryResponse = await fetch(url, {
+            ...options,
+            signal: retryController.signal,
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json',
+              ...options.headers,
+            },
+          });
+
+          clearTimeout(retryTimeoutId);
+
+          if (!retryResponse.ok) {
+            // Sanitize error messages - don't expose internal details
+            console.error(`Calendar API error: ${retryResponse.status}`);
+            throw new Error(`Failed to access calendar: ${retryResponse.status}`);
+          }
+
+          return await retryResponse.json();
+        } catch (error) {
+          clearTimeout(retryTimeoutId);
+          if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error('Request timeout: Google Calendar API not responding');
+          }
+          throw error;
+        }
       }
 
-      return await retryResponse.json();
-    }
+      if (!response.ok) {
+        // Sanitize error messages - don't expose internal details
+        console.error(`Calendar API error: ${response.status}`);
+        throw new Error(`Failed to access calendar: ${response.status}`);
+      }
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Calendar API error: ${response.status} - ${error}`);
+      return await response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: Google Calendar API not responding');
+      }
+      throw error;
     }
+  }
 
-    return await response.json();
+  /**
+   * Filter events to only include confirmed (not cancelled or declined)
+   */
+  private filterConfirmedEvents(events: GoogleCalendarEventResource[]): GoogleCalendarEventResource[] {
+    return events.filter((event) => {
+      // Skip cancelled events
+      if (event.status === 'cancelled') {
+        return false;
+      }
+
+      // If no attendees, consider it confirmed
+      if (!event.attendees || event.attendees.length === 0) {
+        return true;
+      }
+
+      // Check if the primary attendee (you) has declined
+      const primaryDeclined = event.attendees.some(attendee =>
+        (attendee.email === this.config.env.MY_EMAIL || attendee.email === this.calendarId) &&
+        attendee.responseStatus === 'declined'
+      );
+
+      return !primaryDeclined;
+    });
   }
 
   /**
@@ -256,32 +315,7 @@ export class GoogleCalendarService {
 
       const events = response.items || [];
 
-      // Filter out events where the primary attendee (you) has declined
-      const confirmedEvents = events.filter((event) => {
-        // Skip cancelled events
-        if (event.status === 'cancelled') {
-          return false;
-        }
-
-        // If no attendees, consider it confirmed
-        if (!event.attendees || event.attendees.length === 0) {
-          return true;
-        }
-
-        // Check if the primary attendee (you) has declined
-        const primaryAttendee = event.attendees.find(attendee =>
-          attendee.email === this.config.env.MY_EMAIL ||
-          attendee.email === this.calendarId
-        );
-
-        // If primary attendee declined, exclude this event
-        if (primaryAttendee && primaryAttendee.responseStatus === 'declined') {
-          return false;
-        }
-
-        // If primary attendee accepted or no response, include this event
-        return true;
-      });
+      const confirmedEvents = this.filterConfirmedEvents(events);
 
       // Generate all possible time slots based on configured interval
       const slots: TimeSlot[] = [];
@@ -347,32 +381,7 @@ export class GoogleCalendarService {
 
       const events = response.items || [];
 
-      // Filter out events where the primary attendee (you) has declined
-      const confirmedEvents = events.filter((event) => {
-        // Skip cancelled events
-        if (event.status === 'cancelled') {
-          return false;
-        }
-
-        // If no attendees, consider it confirmed
-        if (!event.attendees || event.attendees.length === 0) {
-          return true;
-        }
-
-        // Check if the primary attendee (you) has declined
-        const primaryAttendee = event.attendees.find(attendee =>
-          attendee.email === this.config.env.MY_EMAIL ||
-          attendee.email === this.calendarId
-        );
-
-        // If primary attendee declined, exclude this event
-        if (primaryAttendee && primaryAttendee.responseStatus === 'declined') {
-          return false;
-        }
-
-        // If primary attendee accepted or no response, include this event
-        return true;
-      });
+      const confirmedEvents = this.filterConfirmedEvents(events);
 
       // Check if there are any confirmed events that overlap with the requested time slot
       const hasConflict = confirmedEvents.some((event) => {
@@ -450,7 +459,7 @@ export class GoogleCalendarService {
   }
 
   /**
-   * Convert time from client timezone to calendar timezone
+   * Convert time from client timezone to calendar timezone (use ISO 8601)
    */
   async convertTimeToCalendarTimezone(
     date: string,
@@ -471,44 +480,112 @@ export class GoogleCalendarService {
         return { date, time };
       }
 
-      // Parse date and time components
-      const [year, month, day] = date.split('-').map(Number);
-      const [hours, minutes] = time.split(':').map(Number);
+      // Parse date and time components safely
+      const dateParts = date.split('-').map(Number);
+      const timeParts = time.split(':').map(Number);
 
-      // Validate parsed values
-      if (isNaN(year!) || isNaN(month!) || isNaN(day!) || isNaN(hours!) || isNaN(minutes!)) {
+      if (dateParts.length !== 3 || timeParts.length !== 2) {
+        console.error('Invalid date/time format:', { date, time });
+        return { date, time };
+      }
+
+      // Type-safe destructuring with validation
+      const year = dateParts[0];
+      const month = dateParts[1];
+      const day = dateParts[2];
+      const hours = timeParts[0];
+      const minutes = timeParts[1];
+
+      // Validate parsed values are defined and not NaN
+      if (
+        year === undefined || month === undefined || day === undefined ||
+        hours === undefined || minutes === undefined ||
+        isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes)
+      ) {
         console.error('Invalid date/time components:', { year, month, day, hours, minutes });
         return { date, time };
       }
 
-      // Create a date object representing the time in the client timezone
-      const clientDate = new Date(year!, (month ?? 1) - 1, day!, hours!, minutes!);
+      // Create ISO 8601 string in client timezone
+      // This properly represents the time in the client's timezone
+      const utcTime = Date.UTC(year, month - 1, day, hours, minutes);
 
-      // Validate the created date
-      if (isNaN(clientDate.getTime())) {
-        console.error('Invalid date object created:', clientDate);
+      // Get offset for client timezone at this date
+      const clientDate = new Date(utcTime);
+      const clientStr = clientDate.toLocaleString('en-US', {
+        timeZone: clientTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+
+      // Parse back to get the offset
+      const clientParts = clientStr.match(/(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+):(\d+)/);
+      if (!clientParts || clientParts.length < 7) {
+        console.error('Failed to parse client date string:', clientStr);
         return { date, time };
       }
 
-      // Convert to the calendar timezone
-      const calendarDate = new Date(clientDate.toLocaleString('en-US', { timeZone: calendarTimezone }));
+      const cMonth = clientParts[1];
+      const cDay = clientParts[2];
+      const cYear = clientParts[3];
+      const cHours = clientParts[4];
+      const cMinutes = clientParts[5];
 
-      // Validate the converted date
-      if (isNaN(calendarDate.getTime())) {
-        console.error('Invalid calendar date after conversion:', calendarDate);
+      if (!cMonth || !cDay || !cYear || !cHours || !cMinutes) {
+        console.error('Missing date components:', clientParts);
         return { date, time };
       }
 
-      // Format the result
-      const adjustedYear = calendarDate.getFullYear();
-      const adjustedMonth = String(calendarDate.getMonth() + 1).padStart(2, '0');
-      const adjustedDay = String(calendarDate.getDate()).padStart(2, '0');
-      const adjustedHours = String(calendarDate.getHours()).padStart(2, '0');
-      const adjustedMinutes = String(calendarDate.getMinutes()).padStart(2, '0');
+      const offset = utcTime - Date.UTC(
+        parseInt(cYear),
+        parseInt(cMonth) - 1,
+        parseInt(cDay),
+        parseInt(cHours),
+        parseInt(cMinutes),
+        0
+      );
+
+      // Apply the reverse offset to get the correct UTC time
+      const correctUtcTime = Date.UTC(year, month - 1, day, hours, minutes) - offset;
+      const correctDate = new Date(correctUtcTime);
+
+      // Now format in calendar timezone
+      const calendarStr = correctDate.toLocaleString('en-US', {
+        timeZone: calendarTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+
+      // Parse the calendar timezone string
+      const calendarParts = calendarStr.match(/(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+)/);
+      if (!calendarParts || calendarParts.length < 6) {
+        console.error('Failed to parse calendar date string:', calendarStr);
+        return { date, time };
+      }
+
+      const calMonth = calendarParts[1];
+      const calDay = calendarParts[2];
+      const calYear = calendarParts[3];
+      const calHours = calendarParts[4];
+      const calMinutes = calendarParts[5];
+
+      if (!calMonth || !calDay || !calYear || !calHours || !calMinutes) {
+        console.error('Missing calendar date components:', calendarParts);
+        return { date, time };
+      }
 
       return {
-        date: `${adjustedYear}-${adjustedMonth}-${adjustedDay}`,
-        time: `${adjustedHours}:${adjustedMinutes}`
+        date: `${calYear}-${calMonth.padStart(2, '0')}-${calDay.padStart(2, '0')}`,
+        time: `${calHours.padStart(2, '0')}:${calMinutes.padStart(2, '0')}`
       };
     } catch (error) {
       console.error('Error converting to calendar timezone:', error, { date, time, clientTimezone });
@@ -519,6 +596,7 @@ export class GoogleCalendarService {
 
   /**
    * Convert time from calendar timezone to client timezone
+   * FIXED: Properly handles timezone conversions using Intl API
    */
   async convertTimeFromCalendarTimezone(
     date: string,
@@ -533,25 +611,115 @@ export class GoogleCalendarService {
         return { date, time };
       }
 
-      // Create a date string that represents the time in the calendar timezone
-      const calendarDateTime = `${date}T${time}:00`;
+      // Parse date and time components safely
+      const dateParts = date.split('-').map(Number);
+      const timeParts = time.split(':').map(Number);
 
-      // Create a date object and format it in the client timezone
-      const dateObj = new Date(calendarDateTime);
+      if (dateParts.length !== 3 || timeParts.length !== 2) {
+        console.error('Invalid date/time format:', { date, time });
+        return { date, time };
+      }
 
-      // Format the date in the client timezone
-      const clientDate = new Date(dateObj.toLocaleString('en-US', { timeZone: clientTimezone }));
+      const [year, month, day] = dateParts;
+      const [hours, minutes] = timeParts;
 
-      // Extract the date and time components
-      const year = clientDate.getFullYear();
-      const month = String(clientDate.getMonth() + 1).padStart(2, '0');
-      const day = String(clientDate.getDate()).padStart(2, '0');
-      const hours = String(clientDate.getHours()).padStart(2, '0');
-      const minutes = String(clientDate.getMinutes()).padStart(2, '0');
+      // Validate parsed values - first ensure none are undefined
+      if (
+        year === undefined || month === undefined || day === undefined ||
+        hours === undefined || minutes === undefined
+      ) {
+        console.error('Invalid date/time components (undefined):', { year, month, day, hours, minutes });
+        return { date, time };
+      }
+
+      // Now safely check for NaN (TypeScript knows these are numbers)
+      if (
+        Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day) ||
+        Number.isNaN(hours) || Number.isNaN(minutes)
+      ) {
+        console.error('Invalid date/time components (NaN):', { year, month, day, hours, minutes });
+        return { date, time };
+      }
+
+      // Create a Date assuming UTC, then format in calendar timezone to get offset
+      const utcTime = Date.UTC(year, month - 1, day, hours, minutes);
+      const utcDate = new Date(utcTime);
+
+      // Format in calendar timezone to get what time it would be
+      const calendarStr = utcDate.toLocaleString('en-US', {
+        timeZone: calendarTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+
+      // Parse to get the offset
+      const calendarParts = calendarStr.match(/(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+):(\d+)/);
+      if (!calendarParts || calendarParts.length < 7) {
+        console.error('Failed to parse calendar date string:', calendarStr);
+        return { date, time };
+      }
+
+      const calMonth = calendarParts[1];
+      const calDay = calendarParts[2];
+      const calYear = calendarParts[3];
+      const calHours = calendarParts[4];
+      const calMinutes = calendarParts[5];
+
+      if (!calMonth || !calDay || !calYear || !calHours || !calMinutes) {
+        console.error('Missing calendar date components:', calendarParts);
+        return { date, time };
+      }
+
+      const offset = utcTime - Date.UTC(
+        parseInt(calYear),
+        parseInt(calMonth) - 1,
+        parseInt(calDay),
+        parseInt(calHours),
+        parseInt(calMinutes),
+        0
+      );
+
+      // Apply reverse offset to get correct UTC time
+      const correctUtcTime = Date.UTC(year, month - 1, day, hours, minutes) - offset;
+      const correctDate = new Date(correctUtcTime);
+
+      // Now format in client timezone
+      const clientStr = correctDate.toLocaleString('en-US', {
+        timeZone: clientTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+
+      // Parse the client timezone string
+      const clientParts = clientStr.match(/(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+)/);
+      if (!clientParts || clientParts.length < 6) {
+        console.error('Failed to parse client date string:', clientStr);
+        return { date, time };
+      }
+
+      const cMonth = clientParts[1];
+      const cDay = clientParts[2];
+      const cYear = clientParts[3];
+      const cHours = clientParts[4];
+      const cMinutes = clientParts[5];
+
+      if (!cMonth || !cDay || !cYear || !cHours || !cMinutes) {
+        console.error('Missing client date components:', clientParts);
+        return { date, time };
+      }
 
       return {
-        date: `${year}-${month}-${day}`,
-        time: `${hours}:${minutes}`
+        date: `${cYear}-${cMonth.padStart(2, '0')}-${cDay.padStart(2, '0')}`,
+        time: `${cHours.padStart(2, '0')}:${cMinutes.padStart(2, '0')}`
       };
     } catch (error) {
       console.error('Error converting from calendar timezone:', error, { date, time, clientTimezone });
@@ -565,20 +733,29 @@ export class GoogleCalendarService {
    */
   async getAvailableSlotsInTimezone(date: string, clientTimezone: string): Promise<TimeSlot[]> {
     try {
-      const slots = await this.getAvailableSlots(date);
-      const calendarTimezone = await this.getCalendarTimezone();
+      // Fetch slots and calendar timezone in parallel
+      const [slots, calendarTimezone] = await Promise.all([
+        this.getAvailableSlots(date),
+        this.getCalendarTimezone()
+      ]);
 
       // If timezones are the same, return as is
       if (calendarTimezone === clientTimezone) {
         return slots;
       }
 
-      // Convert each slot to client timezone
       const convertedSlots: TimeSlot[] = [];
 
       for (const slot of slots) {
         try {
-          const converted = await this.convertTimeFromCalendarTimezone(date, slot.time, clientTimezone);
+          // Use synchronous batch conversion instead of async per-slot conversion
+          const converted = this.convertTimeFromCalendarTimezoneSync(
+            date,
+            slot.time,
+            calendarTimezone,
+            clientTimezone
+          );
+
           convertedSlots.push({
             ...slot,
             id: `${converted.date}-${converted.time}`,
@@ -599,6 +776,118 @@ export class GoogleCalendarService {
       // Fallback to original slots
       return await this.getAvailableSlots(date);
     }
+  }
+
+  /**
+   * Synchronous timezone conversion helper (no I/O, pure computation)
+   */
+  private convertTimeFromCalendarTimezoneSync(
+    date: string,
+    time: string,
+    calendarTimezone: string,
+    clientTimezone: string
+  ): { date: string; time: string } {
+    // Parse date and time components
+    const dateParts = date.split('-').map(Number);
+    const timeParts = time.split(':').map(Number);
+
+    if (dateParts.length !== 3 || timeParts.length !== 2) {
+      return { date, time };
+    }
+
+    const [year, month, day] = dateParts;
+    const [hours, minutes] = timeParts;
+
+    // Validate parsed values - first ensure none are undefined
+      if (
+        year === undefined || month === undefined || day === undefined ||
+        hours === undefined || minutes === undefined
+      ) {
+        console.error('Invalid date/time components (undefined):', { year, month, day, hours, minutes });
+        return { date, time };
+      }
+
+    // Validate parsed values
+    if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes)) {
+      return { date, time };
+    }
+
+    // Create a Date assuming UTC, then format in calendar timezone to get offset
+    const utcTime = Date.UTC(year, month - 1, day, hours, minutes);
+    const utcDate = new Date(utcTime);
+
+    // Format in calendar timezone
+    const calendarStr = utcDate.toLocaleString('en-US', {
+      timeZone: calendarTimezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+
+    // Parse to get the offset
+    const calendarParts = calendarStr.match(/(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+):(\d+)/);
+    if (!calendarParts || calendarParts.length < 7) {
+      return { date, time };
+    }
+
+    const calMonth = calendarParts[1];
+    const calDay = calendarParts[2];
+    const calYear = calendarParts[3];
+    const calHours = calendarParts[4];
+    const calMinutes = calendarParts[5];
+
+    if (!calMonth || !calDay || !calYear || !calHours || !calMinutes) {
+      return { date, time };
+    }
+
+    const offset = utcTime - Date.UTC(
+      parseInt(calYear),
+      parseInt(calMonth) - 1,
+      parseInt(calDay),
+      parseInt(calHours),
+      parseInt(calMinutes),
+      0
+    );
+
+    // Apply reverse offset
+    const correctUtcTime = Date.UTC(year, month - 1, day, hours, minutes) - offset;
+    const correctDate = new Date(correctUtcTime);
+
+    // Format in client timezone
+    const clientStr = correctDate.toLocaleString('en-US', {
+      timeZone: clientTimezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    // Parse the client timezone string
+    const clientParts = clientStr.match(/(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+)/);
+    if (!clientParts || clientParts.length < 6) {
+      return { date, time };
+    }
+
+    const cMonth = clientParts[1];
+    const cDay = clientParts[2];
+    const cYear = clientParts[3];
+    const cHours = clientParts[4];
+    const cMinutes = clientParts[5];
+
+    if (!cMonth || !cDay || !cYear || !cHours || !cMinutes) {
+      return { date, time };
+    }
+
+    return {
+      date: `${cYear}-${cMonth.padStart(2, '0')}-${cDay.padStart(2, '0')}`,
+      time: `${cHours.padStart(2, '0')}:${cMinutes.padStart(2, '0')}`
+    };
   }
 
   /**
