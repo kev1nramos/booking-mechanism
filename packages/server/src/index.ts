@@ -17,6 +17,11 @@ export {
   sanitizeInput,
 } from './security.js';
 
+// Export platform adapters
+export * from './adapters/cloudflare.js';
+export * from './adapters/cloudflare-pages.js';
+export * from './adapters/nextjs.js';
+
 // Re-export types from core for convenience
 export type {
   GoogleCalendarConfig,
