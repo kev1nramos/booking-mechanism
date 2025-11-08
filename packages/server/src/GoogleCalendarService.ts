@@ -91,7 +91,7 @@ export class GoogleCalendarService {
     ];
 
     Object.entries(config.env).forEach(([key, value]) => {
-      if (value && placeholderPatterns.some(pattern =>
+      if (value && typeof value === 'string' && placeholderPatterns.some(pattern =>
         value.toLowerCase().includes(pattern)
       )) {
         console.warn(
@@ -255,7 +255,7 @@ export class GoogleCalendarService {
       }
 
       // Check if the primary attendee (you) has declined
-      const primaryDeclined = event.attendees.some(attendee =>
+      const primaryDeclined = event.attendees.some((attendee: { email?: string; responseStatus?: string; }) =>
         (attendee.email === this.config.env.MY_EMAIL || attendee.email === this.calendarId) &&
         attendee.responseStatus === 'declined'
       );
