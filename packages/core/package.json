@@ -1,6 +1,6 @@
 {
   "name": "@kev1nramos/booking-core",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Core types and utilities for Google Calendar booking system",
   "type": "module",
   "main": "./dist/index.js",
