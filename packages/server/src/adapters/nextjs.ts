@@ -44,6 +44,11 @@ export interface NextJSAdapterConfig extends GoogleCalendarConfig {
   timezoneCacheTtl?: number;
   /** Cache TTL for slots endpoint (seconds) */
   slotsCacheTtl?: number;
+  /** CORS configuration */
+  cors?: {
+    /** List of allowed origins */
+    allowedOrigins: string[];
+  };
 }
 
 /**
