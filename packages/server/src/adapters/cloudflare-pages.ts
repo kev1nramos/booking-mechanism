@@ -1,7 +1,7 @@
 /**
- * Cloudflare Pages Functions / Workers adapter
+ * Cloudflare Pages Functions adapter
  *
- * This adapter provides a secure, performant handler for Cloudflare environments.
+ * This adapter provides a secure, performant handler for Cloudflare Pages environments.
  * Features:
  * - Rate limiting
  * - CORS handling
@@ -30,7 +30,7 @@ import {
 /**
  * Cloudflare Pages Function context
  */
-export interface CloudflareContext<Env = Record<string, string>> {
+export interface CloudflarePagesContext<Env = Record<string, string>> {
   request: Request;
   env: Env;
   params: Record<string, string>;
@@ -42,7 +42,7 @@ export interface CloudflareContext<Env = Record<string, string>> {
 /**
  * Cloudflare adapter configuration
  */
-export interface CloudflareAdapterConfig extends Omit<GoogleCalendarConfig, 'env'> {
+export interface CloudflarePagesAdapterConfig extends Omit<GoogleCalendarConfig, 'env'> {
   /** Rate limiting configuration */
   rateLimit?: {
     /** Maximum requests per window */
@@ -57,14 +57,14 @@ export interface CloudflareAdapterConfig extends Omit<GoogleCalendarConfig, 'env
 }
 
 /**
- * Create a Cloudflare Workers Function handler
+ * Create a Cloudflare Pages Function handler
  *
  * @example
  * ```typescript
  * // functions/api/book/[[path]].ts
- * import { createCloudflareWorkersHandler } from '@kev1nramos/booking-server/adapters/cloudflare';
+ * import { createCloudflarePagesHandler } from '@kev1nramos/booking-server/adapters/cloudflare-pages';
  *
- * const handler = createCloudflareWorkersHandler({
+ * const handler = createCloudflarePagesHandler({
  *   cors: {
  *     allowedOrigins: ['https://yourdomain.com', 'http://localhost:3000'],
  *   },
@@ -79,8 +79,8 @@ export interface CloudflareAdapterConfig extends Omit<GoogleCalendarConfig, 'env
  * export const onRequestOptions = handler.OPTIONS;
  * ```
  */
-export function createCloudflareWorkersHandler<Env extends Record<string, string>>(
-  config?: CloudflareAdapterConfig
+export function createCloudflarePagesHandler<Env extends Record<string, string>>(
+  config?: CloudflarePagesAdapterConfig
 ) {
   // Default configuration
   const rateLimitConfig = config?.rateLimit || { max: 20, windowMs: 60000 };
@@ -90,7 +90,7 @@ export function createCloudflareWorkersHandler<Env extends Record<string, string
   /**
    * OPTIONS handler for CORS preflight
    */
-  const OPTIONS = async ({ request, env }: CloudflareContext<Env>): Promise<Response> => {
+  const OPTIONS = async ({ request, env }: CloudflarePagesContext<Env>): Promise<Response> => {
     const serviceConfig: GoogleCalendarConfig = {
       env: env as any,
       ...config,
@@ -108,7 +108,7 @@ export function createCloudflareWorkersHandler<Env extends Record<string, string
   /**
    * GET handler for fetching timezone and available slots
    */
-  const GET = async ({ request, env }: CloudflareContext<Env>): Promise<Response> => {
+  const GET = async ({ request, env }: CloudflarePagesContext<Env>): Promise<Response> => {
     const serviceConfig: GoogleCalendarConfig = {
       env: env as any,
       ...config,
@@ -260,7 +260,7 @@ export function createCloudflareWorkersHandler<Env extends Record<string, string
   /**
    * POST handler for creating bookings
    */
-  const POST = async ({ request, env }: CloudflareContext<Env>): Promise<Response> => {
+  const POST = async ({ request, env }: CloudflarePagesContext<Env>): Promise<Response> => {
     const serviceConfig: GoogleCalendarConfig = {
       env: env as any,
       ...config,
